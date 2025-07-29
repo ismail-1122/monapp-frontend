@@ -1,20 +1,22 @@
 pipeline {
-  agent {
-    kubernetes {
-      yaml """
+    agent {
+        kubernetes {
+            yaml """
 apiVersion: v1
 kind: Pod
+metadata:
+  labels:
+    jenkins: slave
 spec:
+  securityContext:
+    runAsUser: 0
+    runAsGroup: 1000
   containers:
   - name: node
     image: node:20
     command:
     - cat
     tty: true
-    volumeMounts:
-    - mountPath: "/home/jenkins/agent"
-      name: "workspace-volume"
-      readOnly: false
   - name: kaniko
     image: gcr.io/kaniko-project/executor:debug
     command:
@@ -23,11 +25,8 @@ spec:
     volumeMounts:
     - name: kaniko-secret
       mountPath: /kaniko/.docker
-    - mountPath: "/home/jenkins/agent"
-      name: "workspace-volume"
-      readOnly: false
   - name: kubectl
-    image: lachlanevenson/k8s-kubectl:v1.27.4
+    image: lachlanevenson/k8s-kubectl:v1.27.3
     command:
     - cat
     tty: true
@@ -46,54 +45,54 @@ spec:
       medium: ""
     name: workspace-volume
 """
-    }
-  }
-  environment {
-    IMAGE_TAG = "build-${env.BUILD_NUMBER}"
-    DOCKER_IMAGE = "ismailov25/monapp-frontend:${IMAGE_TAG}"
-    REGISTRY = "docker.io"
-  }
-  stages {
-    stage('Checkout') {
-      steps {
-        checkout scm
-      }
-    }
-    stage('Install') {
-      steps {
-        container('node') {
-          sh 'npm install'
         }
-      }
     }
-    stage('Build') {
-      steps {
-        container('node') {
-          sh 'npm run build -- --output-path=dist'
+
+    environment {
+        IMAGE = "ismailov25/monapp-frontend"
+        REGISTRY = "docker.io"
+        TAG = "build-${env.BUILD_ID}-${new Random().nextInt(10000)}"
+    }
+
+    stages {
+        stage('Build Angular App') {
+            steps {
+                container('node') {
+                    sh 'npm install'
+                    sh 'npm run build -- --output-path=dist'
+                }
+            }
         }
-      }
-    }
-    stage('Docker Build & Push') {
-      steps {
-        container('kaniko') {
-          sh """
-            /kaniko/executor \
-              --context=${env.WORKSPACE} \
-              --dockerfile=${env.WORKSPACE}/Dockerfile \
-              --destination=${REGISTRY}/${DOCKER_IMAGE} \
-              --verbosity=info
-          """
+
+        stage('Build & Push Image') {
+            steps {
+                container('kaniko') {
+                    sh 'ls -lh dist/' // Debug : vérifier que le build existe
+                    sh """
+                        /kaniko/executor \
+                          --context=dir://${env.WORKSPACE} \
+                          --dockerfile=Dockerfile \
+                          --destination=${env.REGISTRY}/${env.IMAGE}:${env.TAG} \
+                          --verbosity=info
+                    """
+                }
+            }
         }
-      }
-    }
-    stage('Deploy to Kubernetes') {
-      steps {
-        container('kubectl') {
-          sh """sed -i 's|image: ismailov25/monapp-frontend:.*|image: ismailov25/monapp-frontend:${IMAGE_TAG}|' deployment-frontend.yaml"""
-          sh 'kubectl apply -f deployment-frontend.yaml'
-          sh 'kubectl apply -f service-frontend.yaml'
+
+        stage('Deploy to Kubernetes') {
+            steps {
+                container('kubectl') {
+                    sh """sed -i 's|image: ismailov25/monapp-frontend:.*|image: ismailov25/monapp-frontend:${TAG}|' deployment-frontend.yaml"""
+                    sh 'kubectl apply -f deployment-frontend.yaml'
+                    sh 'kubectl apply -f service-frontend.yaml'
+                }
+            }
         }
-      }
     }
-  }
+
+    post {
+        always {
+            echo "Pipeline completed"
+        }
+    }
 } 
