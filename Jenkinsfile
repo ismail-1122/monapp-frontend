@@ -11,6 +11,10 @@ spec:
     command:
     - cat
     tty: true
+    volumeMounts:
+    - mountPath: "/home/jenkins/agent"
+      name: "workspace-volume"
+      readOnly: false
   - name: kaniko
     image: gcr.io/kaniko-project/executor:debug
     command:
@@ -19,6 +23,18 @@ spec:
     volumeMounts:
     - name: kaniko-secret
       mountPath: /kaniko/.docker
+    - mountPath: "/home/jenkins/agent"
+      name: "workspace-volume"
+      readOnly: false
+  - name: kubectl
+    image: bitnami/kubectl:latest
+    command:
+    - cat
+    tty: true
+    volumeMounts:
+    - mountPath: "/home/jenkins/agent"
+      name: "workspace-volume"
+      readOnly: false
   volumes:
   - name: kaniko-secret
     secret:
@@ -26,6 +42,9 @@ spec:
       items:
        - key: .dockerconfigjson
          path: config.json
+  - emptyDir:
+      medium: ""
+    name: workspace-volume
 """
     }
   }
@@ -69,7 +88,7 @@ spec:
     }
     stage('Deploy to Kubernetes') {
       steps {
-        container('kaniko') {
+        container('kubectl') {
           sh """sed -i 's|image: ismailov25/monapp-frontend:.*|image: ismailov25/monapp-frontend:${IMAGE_TAG}|' deployment-frontend.yaml"""
           sh 'kubectl apply -f deployment-frontend.yaml'
           sh 'kubectl apply -f service-frontend.yaml'
