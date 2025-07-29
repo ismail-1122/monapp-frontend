@@ -1,0 +1,19 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: monapp-frontend-deployment
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: monapp-frontend
+  template:
+    metadata:
+      labels:
+        app: monapp-frontend
+    spec:
+      containers:
+        - name: monapp-frontend-container
+          image: ismailov25/monapp-frontend:latest
+          ports:
+            - containerPort: 80 

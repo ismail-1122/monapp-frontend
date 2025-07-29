@@ -11,24 +11,28 @@ spec:
     command:
     - cat
     tty: true
-  - name: docker
-    image: docker:24.0.7-cli
+  - name: kaniko
+    image: gcr.io/kaniko-project/executor:debug
     command:
-    - cat
+    - /busybox/cat
     tty: true
     volumeMounts:
-    - name: docker-sock
-      mountPath: /var/run/docker.sock
+    - name: kaniko-secret
+      mountPath: /kaniko/.docker
   volumes:
-  - name: docker-sock
-    hostPath:
-      path: /var/run/docker.sock
+  - name: kaniko-secret
+    secret:
+      secretName: regcred
+      items:
+       - key: .dockerconfigjson
+         path: config.json
 """
     }
   }
   environment {
     IMAGE_TAG = "build-${env.BUILD_NUMBER}"
     DOCKER_IMAGE = "ismailov25/monapp-frontend:${IMAGE_TAG}"
+    REGISTRY = "docker.io"
   }
   stages {
     stage('Checkout') {
@@ -52,19 +56,20 @@ spec:
     }
     stage('Docker Build & Push') {
       steps {
-        container('docker') {
-          script {
-            dockerImage = docker.build(env.DOCKER_IMAGE)
-            docker.withRegistry('https://index.docker.io/v1/', 'dockerhub-k8s') {
-              dockerImage.push()
-            }
-          }
+        container('kaniko') {
+          sh """
+            /kaniko/executor \
+              --context=${env.WORKSPACE} \
+              --dockerfile=${env.WORKSPACE}/Dockerfile \
+              --destination=${REGISTRY}/${DOCKER_IMAGE} \
+              --verbosity=info
+          """
         }
       }
     }
     stage('Deploy to Kubernetes') {
       steps {
-        container('docker') {
+        container('kaniko') {
           sh """sed -i 's|image: ismailov25/monapp-frontend:.*|image: ismailov25/monapp-frontend:${IMAGE_TAG}|' deployment-frontend.yaml"""
           sh 'kubectl apply -f deployment-frontend.yaml'
           sh 'kubectl apply -f service-frontend.yaml'
