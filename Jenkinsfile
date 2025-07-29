@@ -17,6 +17,10 @@ spec:
     command:
     - cat
     tty: true
+    volumeMounts:
+    - mountPath: "/home/jenkins/agent"
+      name: "workspace-volume"
+      readOnly: false
   - name: kaniko
     image: gcr.io/kaniko-project/executor:debug
     command:
@@ -25,8 +29,11 @@ spec:
     volumeMounts:
     - name: kaniko-secret
       mountPath: /kaniko/.docker
+    - mountPath: "/home/jenkins/agent"
+      name: "workspace-volume"
+      readOnly: false
   - name: kubectl
-    image: lachlanevenson/k8s-kubectl:v1.27.3
+    image: bitnami/kubectl:1.27
     command:
     - cat
     tty: true
